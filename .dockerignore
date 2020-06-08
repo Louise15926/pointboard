@@ -1,0 +1,5 @@
+.idea/
+gin-bin
+PointBoard
+node_modules/
+.DS_Store

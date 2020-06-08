@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <title>The System</title>
+</head>
+<body>
+<noscript>You need to enable JavaScript to run this app.</noscript>
+<div id="root">
+    <div class="container"><h1>The System</h1></div>
+    {{if .}}
+        <div class="container">
+            <form action="/addpeople" id="add-people-form">
+                <label for="add-people-form-name">New Acolyte's name</label>
+                <input id="add-people-form-name" name="new-name" type="text" required/>
+                <label for="add-people-form-initial-score">Initial score</label>
+                <input id="add-people-form-initial-score" name="new-score" type="text"/>
+                <input class="btn btn-primary" type="submit" value="Welcome :O"/>
+            </form>
+        </div>
+        <div class="container">
+            <form action="/add" id="point-form"></form>
+            <form action="/deletepeople" id="delete-people-form" method="POST"></form>
+            <table class="table table-striped">
+                {{range .People}}
+                    <tr>
+                        <td>{{.Name}}</td>
+                        <td>{{.Score}}</td>
+                        <td><input type="text" form="point-form" name="points-{{.Name}}" class="points-input"/></td>
+                        <td><input type="checkbox" form="delete-people-form" name="{{.Name}}"/></td>
+                    </tr>
+                {{end}}
+                <tr>
+                    <td/><td/>
+                    <td><input class="btn btn-primary" type="submit" form="point-form" value="Submit"></td>
+                    <td><input class="btn btn-danger" type="submit" form="delete-people-form" value="Delete"></td>
+                </tr>
+            </table>
+        </div>
+    {{else}}
+        <span>Unable to connect to database noooo ahhhhhhhhhasdfasdf@#$%$#$%$#@#$%^&*</span>
+    {{end}}
+</div>
+<script src="bundle/bundle.js" type="text/javascript"></script>
+<script>
+    {{if .}}
+    let awardWiningPeople = {{.Awards}} || [];
+    if (awardWiningPeople.length !== 0)
+        window.alert(awardWiningPeople.join() + " win(s) the award yayy")
+    {{end}}
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+.idea/
+gin-bin
+PointBoard
+node_modules/
+ecs-project/
+.DS_Store

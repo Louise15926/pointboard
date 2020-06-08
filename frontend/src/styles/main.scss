@@ -1,0 +1,32 @@
+html * {
+  font-family: "Courier New" !important;
+  font-size: 11 px !important;
+}
+h1 {
+  text-align: center;
+}
+.col {
+  display: inline
+}
+.container {
+    margin: 1em auto;
+}
+.form-add-people {}
+.center-container {
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+}
+// #admin-panel {
+//     form {
+//         display: flex;
+//         justify-content: space-around;
+//     }
+//     label {
+//         margin: 0 0.5em;
+//     }
+//     .field {
+//         margin: 0 3em;
+//     }
+// }
