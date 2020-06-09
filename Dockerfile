@@ -13,4 +13,6 @@ COPY . /app/
 
 WORKDIR /app
 
-CMD ["go", "run", "server.go", "misc.go"]
+ENV APP_MODE="DEPLOYMENT"
+
+CMD ["go", "run", "main.go"]

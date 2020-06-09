@@ -30,7 +30,7 @@ const defaultOffset = 5.0
 
 func setup() *App {
 	app := &App{}
-	app.init("TEST")
+	app.init("TESTING")
 	return app
 }
 

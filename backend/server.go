@@ -148,9 +148,9 @@ func (app* App) init(mode string) {
 	switch  mode {
 	case "DEVELOPMENT":
 		app.config = devConfig
-	case "TEST":
+	case "TESTING":
 		app.config = testConfig
-	case "DEPLOY":
+	case "DEPLOYMENT":
 		app.config = deployConfig
 	default:
 		app.config = devConfig
