@@ -1,4 +1,4 @@
-package main
+package backend
 
 import (
 	rice "github.com/GeertJohan/go.rice"
@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,26 +22,49 @@ type Person struct {
 	Score float64 `redis:"score"`
 }
 
-func homeHandler(w http.ResponseWriter, r *http.Request) {
-	people, err := loadPeople()
+type App struct {
+	pool *redis.Pool
+	config Config
+	tmpl 	template.Template
+}
+
+func renderTemplate(w http.ResponseWriter, people []Person, tmpl template.Template) {
+	err := tmpl.ExecuteTemplate(w, "index.html", Data{
+		People: people,
+		Awards: awards,
+	})
+	checkError(w, err)
+}
+
+func checkError(w http.ResponseWriter, err error) {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (app *App) homeHandler(w http.ResponseWriter, r *http.Request) {
+	people, err := app.loadPeople()
 	checkError(w, err)
 
-	renderTemplate(w, people)
+	renderTemplate(w, people, app.tmpl)
 
 	awards = make([]string ,0)
 }
 
-func addHandler(w http.ResponseWriter, r *http.Request) {
-	conn := pool.Get()
+func (app *App) addHandler(w http.ResponseWriter, r *http.Request) {
+	conn := app.pool.Get()
 
-	r.ParseMultipartForm(64*30)
+	err := r.ParseForm()
+	checkError(w, err)
 
 	for key, values := range r.Form {
 		name := strings.SplitN(key, "-", 2)[1]
 		value := values[0]
+
 		if value == "" {
 			continue
 		}
+
 		byPoints, err := strconv.ParseFloat(value, 64)
 		checkError(w, err)
 
@@ -57,8 +81,8 @@ func addHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func addPeopleHandler(w http.ResponseWriter, r *http.Request){
-	conn := pool.Get()
+func (app *App) addPeopleHandler(w http.ResponseWriter, r *http.Request){
+	conn := app.pool.Get()
 
 	name, score, expression := r.FormValue("new-name"), r.FormValue("new-score"), r.FormValue("new-score-exp")
 
@@ -79,22 +103,22 @@ func addPeopleHandler(w http.ResponseWriter, r *http.Request){
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func deletePeopleHandler(w http.ResponseWriter, r *http.Request) {
-	conn := pool.Get()
+func (app *App) deletePeopleHandler(w http.ResponseWriter, r *http.Request) {
+	conn := app.pool.Get()
 
 	err := r.ParseForm()
 	checkError(w, err)
 
 	for key, _ := range r.Form {
-		_, err = conn.Do("DEL", key)
+		_, err := conn.Do("DEL", key)
 		checkError(w, err)
 	}
 
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func loadPeople() ([]Person, error) {
-	conn := pool.Get()
+func (app *App) loadPeople() ([]Person, error) {
+	conn := app.pool.Get()
 	defer conn.Close()
 
 	peopleKeys, err := redis.Strings(conn.Do("KEYS", "*"))
@@ -120,20 +144,40 @@ func loadPeople() ([]Person, error) {
 	return people, nil
 }
 
-var tmpl = template.Must(template.ParseFiles("frontend/dist/index.html"))
-var pool *redis.Pool
+func (app* App) init(mode string) {
+	switch  mode {
+	case "DEVELOPMENT":
+		app.config = devConfig
+	case "TEST":
+		app.config = testConfig
+	case "DEPLOY":
+		app.config = deployConfig
+	default:
+		app.config = devConfig
+	}
+
+	app.pool = &redis.Pool{
+		Dial: func() (redis.Conn, error) {
+			return redis.Dial("tcp", app.config.dbURL)
+		},
+	}
+
+	app.tmpl = *template.Must(template.ParseFiles(app.config.tmplPath))
+}
+
 var awards []string
 
-func main() {
-	box := rice.MustFindBox("frontend/dist/bundle/").HTTPBox()
+func Start() {
+	box := rice.MustFindBox("../frontend/dist/bundle/").HTTPBox()
 	staticFileServer := http.StripPrefix("/bundle/", http.FileServer(box.HTTPBox()))
 	http.Handle("/bundle/", staticFileServer)
 
-	makePool()
-	http.HandleFunc("/", homeHandler)
-	http.HandleFunc("/add", addHandler)
-	http.HandleFunc("/addpeople", addPeopleHandler)
-	http.HandleFunc("/deletepeople", deletePeopleHandler)
+	app := &App{}
+	app.init(os.Getenv("APP_MODE"))
+
+	http.HandleFunc("/", app.homeHandler)
+	http.HandleFunc("/add", app.addHandler)
+	http.HandleFunc("/addpeople", app.addPeopleHandler)
+	http.HandleFunc("/deletepeople", app.deletePeopleHandler)
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
-
