@@ -7,7 +7,7 @@
 
 ## Install dependencies
 ### Backend dependencies
-- go get install dependencies
+Run `go install` from `backend/`
 ### Frontend dependencies
 From the project root directory:
 ```
