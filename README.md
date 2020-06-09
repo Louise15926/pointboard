@@ -29,7 +29,7 @@ Within the `frontend/` folder, run
 ```shell script
 npm start
 ```
-This will starts the frontend in development mode and begin listening on port (`8080` by default). Visit `localhost:8080` if it is not opened in browser yet. 
+This will starts the frontend in development mode and begin listening on port (`8080` by default). Visit `localhost:8080` if it is not opened in browser yet. :x
 
 Note that this is limited in the sense that the frontend doesn't pull data from the database. Only the backend is able to pull data, populate the template, and serves to the browser. Therefore, the page you will see on `localhost:8080` isn't populated with data. However, this is a convenient way to see the effect of  stylesheets, and some frontend scripts.
 
