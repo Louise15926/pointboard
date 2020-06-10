@@ -5,6 +5,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
@@ -12,46 +13,33 @@ import (
 	"strings"
 )
 
-type Data struct {
-	People []Person
+type data struct {
+	People []person
 	Awards []string
 }
 
-type Person struct {
-	Name string `redis:"name"`
+type person struct {
+	Name  string  `redis:"name"`
 	Score float64 `redis:"score"`
 }
 
-type App struct {
+type app struct {
 	pool *redis.Pool
 	config Config
 	tmpl 	template.Template
 }
 
-func renderTemplate(w http.ResponseWriter, people []Person, tmpl template.Template) {
-	err := tmpl.ExecuteTemplate(w, "index.html", Data{
-		People: people,
-		Awards: awards,
-	})
-	checkError(w, err)
-}
-
-func checkError(w http.ResponseWriter, err error) {
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func (app *App) homeHandler(w http.ResponseWriter, r *http.Request) {
+func (app *app) homeHandler(w http.ResponseWriter, r *http.Request) {
 	people, err := app.loadPeople()
 	checkError(w, err)
 
 	renderTemplate(w, people, app.tmpl)
 
-	awards = make([]string ,0)
+	awards = make([]string, 0)
 }
 
-func (app *App) addHandler(w http.ResponseWriter, r *http.Request) {
+// Add/deduct points to participants; if the score after adding exceeds 100, add participant(s) to award list and reset their score to 0
+func (app *app) addHandler(w http.ResponseWriter, r *http.Request) {
 	conn := app.pool.Get()
 
 	err := r.ParseForm()
@@ -68,23 +56,31 @@ func (app *App) addHandler(w http.ResponseWriter, r *http.Request) {
 		byPoints, err := strconv.ParseFloat(value, 64)
 		checkError(w, err)
 
-		// check awards
+		// check Awards
 		currScore, err := redis.Float64(conn.Do("HGET", name, "score"))
 		checkError(w, err)
 		if currScore + byPoints >= 100 {
 			awards = append(awards, name)
-			byPoints -= 100
+			_, err = conn.Do("HSET", name, "score", 0)
+		} else {
+			if currScore + byPoints <= -math.MaxFloat64 {
+				http.Error(w, "the resulting number of points is too small", http.StatusUnprocessableEntity)
+				return
+			}
+			_, err = conn.Do("HINCRBYFLOAT", name, "score", byPoints)
 		}
-		_, err = conn.Do("HINCRBYFLOAT", name, "score", byPoints)
 		checkError(w, err)
 	}
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func (app *App) addPeopleHandler(w http.ResponseWriter, r *http.Request){
+// Add a new participant with initial score; if the initial score is >= 100, add participant to award list and set their score to 0
+func (app *app) addPeopleHandler(w http.ResponseWriter, r *http.Request){
 	conn := app.pool.Get()
 
 	name, score, expression := r.FormValue("new-name"), r.FormValue("new-score"), r.FormValue("new-score-exp")
+
+	name = normalizeString(name)
 
 	existed, err := redis.Bool(conn.Do("EXISTS", name))
 	checkError(w, err)
@@ -92,9 +88,11 @@ func (app *App) addPeopleHandler(w http.ResponseWriter, r *http.Request){
 	if !existed {
 		// check award
 		scoreVal, err := strconv.ParseFloat(score, 64)
+		checkError(w, err)
+
 		if scoreVal >= 100 {
 			awards = append(awards, name)
-			scoreVal -= 100
+			scoreVal = 0
 		}
 		_, err = conn.Do("HSET", name, "name", name, "score", scoreVal, "expression", expression)
 		checkError(w, err)
@@ -103,7 +101,8 @@ func (app *App) addPeopleHandler(w http.ResponseWriter, r *http.Request){
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func (app *App) deletePeopleHandler(w http.ResponseWriter, r *http.Request) {
+// Delete participant(s) that are specified in the request using their name(s)
+func (app *app) deletePeopleHandler(w http.ResponseWriter, r *http.Request) {
 	conn := app.pool.Get()
 
 	err := r.ParseForm()
@@ -117,7 +116,7 @@ func (app *App) deletePeopleHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-func (app *App) loadPeople() ([]Person, error) {
+func (app *app) loadPeople() ([]person, error) {
 	conn := app.pool.Get()
 	defer conn.Close()
 
@@ -128,15 +127,20 @@ func (app *App) loadPeople() ([]Person, error) {
 	}
 	sort.Strings(peopleKeys)
 
-	people := make([]Person, len(peopleKeys))
+	people := make([]person, len(peopleKeys))
 	for idx, personName := range peopleKeys {
 		if personName == ""{
 			conn.Do("DEL", personName)
 		}
 		raw, err := redis.Values(conn.Do("HGETALL", personName))
-		person := Person{}
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		person := person{}
 		err = redis.ScanStruct(raw, &person)
 		if err != nil {
+			log.Println(err)
 			continue
 		}
 		people[idx] = person
@@ -144,14 +148,32 @@ func (app *App) loadPeople() ([]Person, error) {
 	return people, nil
 }
 
-func (app* App) init(mode string) {
+// normalizeString returns a string after it removes all redundant whitespace, leading/training whitespace, and lowercases it
+func normalizeString(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+func renderTemplate(w http.ResponseWriter, people []person, tmpl template.Template) {
+	err := tmpl.ExecuteTemplate(w, "index.html", data{
+		People: people,
+		Awards: awards,
+	})
+	checkError(w, err)
+}
+
+func checkError(w http.ResponseWriter, err error) {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (app*app) init(mode string) {
 	switch  mode {
-	case "DEVELOPMENT":
-		app.config = devConfig
 	case "TESTING":
 		app.config = testConfig
 	case "DEPLOYMENT":
 		app.config = deployConfig
+	case "DEVELOPMENT":
 	default:
 		app.config = devConfig
 	}
@@ -172,7 +194,7 @@ func Start() {
 	staticFileServer := http.StripPrefix("/bundle/", http.FileServer(box.HTTPBox()))
 	http.Handle("/bundle/", staticFileServer)
 
-	app := &App{}
+	app := &app{}
 	app.init(os.Getenv("APP_MODE"))
 
 	http.HandleFunc("/", app.homeHandler)

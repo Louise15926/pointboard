@@ -5,6 +5,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/require"
 	"log"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -12,14 +13,14 @@ import (
 )
 
 
-var people = []Person{
+var people = []person{
 	{
-	"horsey",
-	42,
+		"horsey",
+		42,
 	},
 	{
-	"small bear",
-	55,
+		"small bear",
+		55,
 	},
 	{
 		"doggo",
@@ -28,13 +29,13 @@ var people = []Person{
 }
 const defaultOffset = 5.0
 
-func setup() *App {
-	app := &App{}
+func setup() *app {
+	app := &app{}
 	app.init("TESTING")
 	return app
 }
 
-func initDB(app *App, people []Person) error {
+func initDB(app *app, people []person) error {
 	conn := app.pool.Get()
 
 	for _, person := range people {
@@ -47,7 +48,7 @@ func initDB(app *App, people []Person) error {
 	return nil
 }
 
-func cleanDB(app *App) {
+func cleanDB(app *app) {
 	conn := app.pool.Get()
 	_, err := conn.Do("FLUSHDB")
 	if err != nil {
@@ -90,7 +91,7 @@ func TestAddPeopleSuccess(t *testing.T) {
 			"small bear",
 			"188",
 			http.StatusFound,
-			88,
+			0,
 		},
 	}
 	for name, tc := range testCasesSuccess {
@@ -160,9 +161,9 @@ func TestAddSuccessSingleUpdate(t *testing.T) {
 	defer cleanDB(app)
 
 	testCases := map[string]struct {
-		testPerson	Person
-		offset  float64
-		expectedScore	float64
+		testPerson    person
+		offset        float64
+		expectedScore float64
 	} {
 		"single update below 100": {
 			people[0],
@@ -172,7 +173,12 @@ func TestAddSuccessSingleUpdate(t *testing.T) {
 		"single update over 100": {
 			people[1],
 			100 + 2 - people[1].Score,
-			2,
+			0,
+		},
+		"single update below 0": {
+			people[0],
+			-10,
+			people[0].Score - 10,
 		},
 	}
 
@@ -230,7 +236,7 @@ func TestAddSuccessMultipleUpdate(t *testing.T) {
 	recorder := httptest.NewRecorder()
 
 	req, err := createRequestWithQuery("/add", map[string]string{
-		"point-"+testPerson0.Name:fmt.Sprintf("%f", testOffset0),
+		"point-"+testPerson0.Name: fmt.Sprintf("%f", testOffset0),
 		"point-"+testPerson1.Name: fmt.Sprintf("%f", testOffset1),
 	})
 	if err != nil {
@@ -257,6 +263,44 @@ func TestAddSuccessMultipleUpdate(t *testing.T) {
 		return
 	}
 	require.Equal(t, testPerson1.Score+testOffset1, score1)
+}
+
+func TestAddFailure(t *testing.T) {
+	app := setup()
+	defer cleanDB(app)
+
+	err := initDB(app, people)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	testPerson := people[0]
+	testOffset := -math.MaxFloat64 + testPerson.Score - 1
+
+	handler := http.HandlerFunc(app.addHandler)
+	recorder := httptest.NewRecorder()
+
+	req, err := createRequestWithQuery("/add", map[string]string{
+		"point-"+testPerson.Name: fmt.Sprintf("%f", testOffset),
+	})
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	handler.ServeHTTP(recorder, req)
+
+	// test if response status code is correct
+	require.Equal(t, http.StatusUnprocessableEntity, recorder.Code)
+
+	// test if the data in database is unchanged as expected
+	conn := app.pool.Get()
+	score, err := redis.Float64(conn.Do("HGET", testPerson.Name, "score"))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	require.Equal(t, testPerson.Score, score)
 }
 
 func TestDeleteSuccess(t *testing.T) {

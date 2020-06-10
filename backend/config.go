@@ -1,21 +1,23 @@
 package backend
 
+import "os"
+
 type Config struct {
 	dbURL		string
 	tmplPath	string
 }
 
 var devConfig = Config {
-	":6379",
+	os.Getenv("DEV_DBURL"),
 	"frontend/dist/index.html",
 }
 
 var testConfig = Config {
-	":6378",
+	os.Getenv("TEST_DBURL"),
 	"../frontend/dist/index.html",
 }
 
 var deployConfig = Config {
-	"db.pb-html.local:6379",
+	os.Getenv("ECS_APP_DISCOVERY_ENDPOINT"),//"db.pb-html.local:6379",
 	"frontend/dist/index.html",
 }
