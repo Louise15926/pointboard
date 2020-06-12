@@ -1,0 +1,6 @@
+.idea/
+backend/gin-bin
+backend/PointBoard
+node_modules/
+ecs-project/
+.DS_Store
